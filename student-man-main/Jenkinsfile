@@ -26,6 +26,12 @@ pipeline {
 sh 'mvn  sonar:sonar'
             }
         }
+        stage('GIT'){
+            steps{
+                git branch: 'main',
+                    url: 'https://github.com/Med-benabdallah/Devsecops-project.git'
+            }
+        }
         stage('Build (skip tests)') {
   steps {
     dir('student-man-main') {
