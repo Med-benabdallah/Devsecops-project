@@ -20,7 +20,6 @@ pipeline {
         stage('MVN SONARQUBE'){
             steps{
                 echo 'SONARQUBE DONE!!!'
-sh 'mvn -B -V -f student-man-main/pom.xml clean verify'
 sh 'mvn -B    -f student-man-main/pom.xml sonar:sonar -Dsonar.projectKey=Devsecops-project -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.token=$SONAR_TOKEN'
             }
         }
