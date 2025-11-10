@@ -20,7 +20,7 @@ pipeline {
         stage('MVN SONARQUBE'){
             steps{
                 echo 'SONARQUBE DONE!!!'
-sh 'mvn ... sonar:sonar'            }
+sh 'sonar:sonar'            }
         }
     }
 }
