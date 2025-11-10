@@ -26,12 +26,23 @@ pipeline {
                     url: 'https://github.com/Med-benabdallah/Devsecops-project.git'
             }
         }
-        stage('MVN SONARQUBE'){
-            steps{
-                echo 'SONARQUBE DONE!!!'
-sh 'mvn -B -V -f pom.xml clean \verify sonar:sonar'
-            }
-        }
+        stage('Build + SonarQube') {
+      steps {
+        // Make sure Jenkins runs inside the repo root
+        checkout scm
+
+        // Run everything from the same folder that has pom.xml
+        sh '''
+          echo "Current directory:"
+          pwd
+          ls -la
+
+          mvn -B -V -DskipTests clean verify sonar:sonar \
+            -Dsonar.host.url=$SONAR_HOST_URL \
+            -Dsonar.token=$SONAR_TOKEN
+        '''
+      }
+    }
         
         stage('Build (skip tests)') {
   steps {
