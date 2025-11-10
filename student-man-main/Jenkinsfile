@@ -29,7 +29,7 @@ pipeline {
         stage('MVN SONARQUBE'){
             steps{
                 echo 'SONARQUBE DONE!!!'
-sh 'mvn  sonar:sonar'
+sh 'mvn -B -V -f pom.xml clean \verify sonar:sonar'
             }
         }
         
