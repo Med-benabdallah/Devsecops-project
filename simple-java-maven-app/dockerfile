@@ -1,0 +1,32 @@
+# ===== Build stage =====
+FROM maven:3.6.3-openjdk-17 AS builder
+
+WORKDIR /app
+
+# Copy pom.xml and download dependencies first (cache optimization)
+COPY pom.xml .
+RUN mvn -B -q -e -DskipTests dependency:go-offline
+
+# Copy source code
+COPY src ./src
+
+# Package the app
+RUN mvn -B -q -DskipTests clean package
+
+# ===== Runtime stage =====
+FROM openjdk:17-jdk-slim
+
+# Create non-root user for better security
+RUN useradd -ms /bin/bash appuser
+USER appuser
+
+WORKDIR /app
+COPY --from=builder /app/target/*.jar /app/app.jar
+
+# Expose your app port (adjust if needed)
+EXPOSE 8080
+
+# Optional: limit container memory usage
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
