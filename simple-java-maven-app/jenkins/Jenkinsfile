@@ -40,6 +40,34 @@ pipeline {
                 }
             }
         }
+        stage('Secrets Scan - Gitleaks') {
+  steps {
+    sh '''
+      set -euo pipefail
+      mkdir -p tools reports
+
+      # Download gitleaks (static binary)
+      GITLEAKS_VER="v8.18.4"
+      URL="https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz"
+      curl -sSL "$URL" | tar -xz -C tools
+      chmod +x tools/gitleaks || true
+
+      # Scan entire repo, fail on findings (exit 1), output SARIF + JSON
+      ./tools/gitleaks detect \
+        --source . \
+        --report-format sarif \
+        --report-path reports/gitleaks.sarif \
+        --exit-code 1
+
+      ./tools/gitleaks detect \
+        --source . \
+        --report-format json \
+        --report-path reports/gitleaks.json \
+        --exit-code 0
+    '''
+  }
+}
+
     }
 
     post {
@@ -51,6 +79,7 @@ pipeline {
         }
     }
 }
+
 
 
 
