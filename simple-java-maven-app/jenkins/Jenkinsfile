@@ -10,7 +10,7 @@ pipeline {
         // keep your credential id
         SONAR_TOKEN = credentials('devsecops')
         IMAGE_NAME  = 'my-app'   // Docker image name used in the Trivy image scan + DAST
-        APP_PORT    = '8080'     // change if your app exposes a different port
+        APP_PORT    = '9001'     // change if your app exposes a different port
     }
 
     stages {
@@ -198,3 +198,4 @@ echo "🧹 Cleaned up app and network."
         }
     }
 }
+
