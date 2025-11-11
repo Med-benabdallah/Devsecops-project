@@ -5,9 +5,6 @@ pipeline {
         maven 'M2_HOME'
     }
 
-    environment {
-        SONAR_TOKEN = credentials('sonar-token') // 👈 linked credential
-    }
 
     stages {
         stage('Build') {
@@ -43,4 +40,5 @@ pipeline {
         }
     }
 }
+
 
