@@ -96,8 +96,7 @@ if ! command -v trivy >/dev/null 2>&1; then
   export PATH="$PWD/tools:$PATH"
 fi
 
-# ✅ fix: correct /dev/null path
-if command -v docker >/dev/null 2>&1; then
+if command -v docker >/devnull 2>&1; then
   echo "Docker found → building image and running image scan..."
   docker build -t "${IMAGE_NAME}:${BUILD_NUMBER}" simple-java-maven-app
 
@@ -124,12 +123,11 @@ set -euo pipefail
 mkdir -p reports
 
 if command -v docker >/dev/null 2>&1; then
-  # use ${STAGING_URL:-} so nounset doesn't break if empty
-  echo "Running ZAP Baseline against: ${STAGING_URL:-}"
+  echo "Running ZAP Baseline against: $STAGING_URL"
   docker run --rm -t \
     -v "$PWD/reports:/zap/wrk" \
     owasp/zap2docker-stable zap-baseline.py \
-      -t "${STAGING_URL:-}" \
+      -t "$STAGING_URL" \
       -J /zap/wrk/zap-baseline.json \
       -w /zap/wrk/zap-warn.md \
       -x /zap/wrk/zap-report.xml \
