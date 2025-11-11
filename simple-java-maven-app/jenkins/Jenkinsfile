@@ -1,47 +1,45 @@
 pipeline {
-  agent any
+    agent any
 
-  // Supprime ansiColor ici, garde seulement timestamps()
-  options {
-    timestamps()
-  }
-
-  tools {
-    maven 'M2_HOME'
-  }
-
-  environment {
-    SONAR_TOKEN = credentials('devsecops') // ton credential
-  }
-
-  stages {
-    stage('Build') {
-      steps {
-        dir('simple-java-maven-app') {
-          sh 'mvn -B clean install'
-        }
-      }
+    tools {
+        maven 'M2_HOME'
     }
 
-    stage('SonarQube Analysis') {
-      steps {
-        dir('simple-java-maven-app') {
-          withSonarQubeEnv('SonarQube') {
-            sh '''
-              mvn -B clean verify sonar:sonar \
-                -Dsonar.projectKey=my-app \
-                -Dsonar.host.url=$SONAR_HOST_URL \
-                -Dsonar.token=$SONAR_TOKEN
-            '''
-          }
-        }
-      }
+    environment {
+        SONAR_TOKEN = credentials('devsecops') // 👈 linked credential
     }
-  }
 
-  post {
-    success { echo '✅ Pipeline completed successfully!' }
-    failure { echo '❌ Pipeline failed — check the console output for details.' }
-  }
+    stages {
+        stage('Build') {
+            steps {
+                dir('simple-java-maven-app') {
+                    sh 'mvn -B clean install'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                dir('simple-java-maven-app') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh '''
+                            mvn -B clean verify sonar:sonar \
+                              -Dsonar.projectKey=my-app \
+                              -Dsonar.host.url=http://localhost:9000 \
+                              -Dsonar.token=$SONAR_TOKEN
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '✅ Pipeline completed successfully!'
+        }
+        failure {
+            echo '❌ Pipeline failed — check the console output for details.'
+        }
+    }
 }
-
