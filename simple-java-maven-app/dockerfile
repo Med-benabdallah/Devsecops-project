@@ -1,32 +1,28 @@
 # ===== Build stage =====
-FROM maven:3.6.3-openjdk-17 AS builder
+# Uses Maven 3.6.3 with Temurin (Java 17)
+FROM maven:3.6.3-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-# Copy pom.xml and download dependencies first (cache optimization)
+# Cache deps
 COPY pom.xml .
-RUN mvn -B -q -e -DskipTests dependency:go-offline
+RUN mvn -B -q -DskipTests dependency:go-offline
 
-# Copy source code
+# Build
 COPY src ./src
-
-# Package the app
 RUN mvn -B -q -DskipTests clean package
 
 # ===== Runtime stage =====
-FROM openjdk:17-jdk-slim
-
-# Create non-root user for better security
-RUN useradd -ms /bin/bash appuser
-USER appuser
+# Use Temurin JRE 17 (small, maintained)
+FROM eclipse-temurin:17-jre
 
 WORKDIR /app
 COPY --from=builder /app/target/*.jar /app/app.jar
 
-# Expose your app port (adjust if needed)
-EXPOSE 8080
+# Expose app port (change if different)
+EXPOSE 9001
 
-# Optional: limit container memory usage
+# Optional JVM tuning for containers
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"]
