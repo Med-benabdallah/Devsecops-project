@@ -2,14 +2,20 @@ pipeline {
     agent any
 
     tools {
+        // keep your Maven tool name
         maven 'M2_HOME'
     }
 
     environment {
-        SONAR_TOKEN = credentials('devsecops') // 👈 linked credential
+        // keep your credential id
+        SONAR_TOKEN = credentials('devsecops')
+        // Optional: set STAGING_URL in the job's Environment variables to enable ZAP (e.g., http://staging.example.com)
+        // STAGING_URL = 'http://...'
+        IMAGE_NAME  = 'my-app'   // Docker image name used in the Trivy image scan
     }
 
     stages {
+        // ---------- YOUR EXISTING STAGES (unchanged) ----------
         stage('Build') {
             steps {
                 dir('simple-java-maven-app') {
@@ -33,6 +39,7 @@ pipeline {
                 }
             }
         }
+
         stage('Dependency Scan') {
             steps {
                 dir('simple-java-maven-app') {
@@ -40,37 +47,107 @@ pipeline {
                 }
             }
         }
+        // ------------------------------------------------------
+
+        // ---------- NEW: Secrets Scan (Gitleaks) ----------
         stage('Secrets Scan - Gitleaks') {
-  steps {
-    sh '''
-      set -euo pipefail
-      mkdir -p tools reports
+            steps {
+                sh '''#!/bin/bash
+set -euo pipefail
+mkdir -p tools reports
 
-      # Download gitleaks (static binary)
-      GITLEAKS_VER="v8.18.4"
-      URL="https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz"
-      curl -sSL "$URL" | tar -xz -C tools
-      chmod +x tools/gitleaks || true
+GITLEAKS_VER="v8.18.4"
+URL="https://github.com/gitleaks/gitleaks/releases/download/${GITLEAKS_VER}/gitleaks_${GITLEAKS_VER#v}_linux_x64.tar.gz"
 
-      # Scan entire repo, fail on findings (exit 1), output SARIF + JSON
-      ./tools/gitleaks detect \
-        --source . \
-        --report-format sarif \
-        --report-path reports/gitleaks.sarif \
-        --exit-code 1
+# Download gitleaks
+curl -sSL "$URL" | tar -xz -C tools
+chmod +x tools/gitleaks || true
 
-      ./tools/gitleaks detect \
-        --source . \
-        --report-format json \
-        --report-path reports/gitleaks.json \
-        --exit-code 0
-    '''
-  }
-}
+# Blocking scan (fails pipeline on findings)
+./tools/gitleaks detect \
+  --source . \
+  --report-format sarif \
+  --report-path reports/gitleaks.sarif \
+  --exit-code 1
 
+# Non-blocking JSON report (for artifacts/visibility)
+./tools/gitleaks detect \
+  --source . \
+  --report-format json \
+  --report-path reports/gitleaks.json \
+  --exit-code 0
+'''
+            }
+        }
+
+        // ---------- NEW: Docker Image Scan (Trivy) ----------
+        stage('Docker Scan - Trivy') {
+            steps {
+                sh '''#!/bin/bash
+set -euo pipefail
+mkdir -p tools reports
+
+# Install trivy locally if not present
+if ! command -v trivy >/dev/null 2>&1; then
+  TRIVY_VER="0.53.0"
+  curl -sSL -o tools/trivy.tgz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VER}/trivy_${TRIVY_VER}_Linux-64bit.tar.gz"
+  tar -xzf tools/trivy.tgz -C tools trivy
+  chmod +x tools/trivy
+  export PATH="$PWD/tools:$PATH"
+fi
+
+if command -v docker >/devnull 2>&1; then
+  echo "Docker found → building image and running image scan..."
+  docker build -t "${IMAGE_NAME}:${BUILD_NUMBER}" simple-java-maven-app
+
+  # Fail on HIGH/CRITICAL vulns in the image
+  trivy image --exit-code 1 --severity HIGH,CRITICAL --no-progress \
+    "${IMAGE_NAME}:${BUILD_NUMBER}" | tee reports/trivy-image.txt
+else
+  echo "Docker not found → skipping image build; running filesystem scan (non-blocking)."
+  # Produce a report but don't fail the build
+  trivy fs --severity HIGH,CRITICAL --no-progress . | tee reports/trivy-fs.txt || true
+fi
+'''
+            }
+        }
+
+        // ---------- NEW: DAST (OWASP ZAP Baseline) ----------
+        stage('DAST - OWASP ZAP Baseline') {
+            when {
+                expression { return env.STAGING_URL?.trim() } // only runs if STAGING_URL is set
+            }
+            steps {
+                sh '''#!/bin/bash
+set -euo pipefail
+mkdir -p reports
+
+if command -v docker >/dev/null 2>&1; then
+  echo "Running ZAP Baseline against: $STAGING_URL"
+  docker run --rm -t \
+    -v "$PWD/reports:/zap/wrk" \
+    owasp/zap2docker-stable zap-baseline.py \
+      -t "$STAGING_URL" \
+      -J /zap/wrk/zap-baseline.json \
+      -w /zap/wrk/zap-warn.md \
+      -x /zap/wrk/zap-report.xml \
+      -r /zap/wrk/zap-report.html \
+      -I   # non-blocking; remove -I to make it fail on alerts
+else
+  echo "Docker not found → skipping ZAP DAST."
+fi
+'''
+            }
+        }
     }
 
     post {
+        always {
+            // Archive reports from the new stages + Dependency-Check defaults
+            archiveArtifacts artifacts: 'reports/*, simple-java-maven-app/target/dependency-check-report.*', onlyIfSuccessful: false
+            // If you run tests, publish JUnit (won't fail if none)
+            junit allowEmptyResults: true, testResults: 'simple-java-maven-app/target/surefire-reports/*.xml'
+        }
         success {
             echo '✅ Pipeline completed successfully!'
         }
@@ -79,10 +156,3 @@ pipeline {
         }
     }
 }
-
-
-
-
-
-
-
