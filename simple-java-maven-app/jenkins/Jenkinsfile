@@ -27,6 +27,7 @@ pipeline {
                               -Dsonar.projectKey=my-app \
                               -Dsonar.host.url=http://localhost:9000 \
                               -Dsonar.token=$SONAR_TOKEN
+                              -Dsonar.qualitygate.wait=true
                         '''
                     }
                 }
@@ -50,4 +51,5 @@ pipeline {
         }
     }
 }
+
 
