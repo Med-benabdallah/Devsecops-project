@@ -9,9 +9,8 @@ pipeline {
     environment {
         // keep your credential id
         SONAR_TOKEN = credentials('devsecops')
-        // Optional: set STAGING_URL in the job's Environment variables to enable ZAP (e.g., http://staging.example.com)
-        // STAGING_URL = 'http://...'
-        IMAGE_NAME  = 'my-app'   // Docker image name used in the Trivy image scan
+        IMAGE_NAME  = 'my-app'   // Docker image name used in the Trivy image scan + DAST
+        APP_PORT    = '8080'     // change if your app exposes a different port
     }
 
     stages {
@@ -49,7 +48,7 @@ pipeline {
         }
         // ------------------------------------------------------
 
-        // ---------- NEW: Secrets Scan (Gitleaks) ----------
+        // ---------- Secrets Scan (Gitleaks) ----------
         stage('Secrets Scan - Gitleaks') {
             steps {
                 sh '''#!/bin/bash
@@ -80,7 +79,7 @@ chmod +x tools/gitleaks || true
             }
         }
 
-        // ---------- NEW: Docker Image Scan (Trivy) ----------
+        // ---------- Docker Image Scan (Trivy) ----------
         stage('Docker Scan - Trivy') {
             steps {
                 sh '''#!/bin/bash
@@ -96,7 +95,7 @@ if ! command -v trivy >/dev/null 2>&1; then
   export PATH="$PWD/tools:$PATH"
 fi
 
-if command -v docker >/devnull 2>&1; then
+if command -v docker >/dev/null 2>&1; then
   echo "Docker found → building image and running image scan..."
   docker build -t "${IMAGE_NAME}:${BUILD_NUMBER}" simple-java-maven-app
 
@@ -112,30 +111,73 @@ fi
             }
         }
 
-        // ---------- NEW: DAST (OWASP ZAP Baseline) ----------
-        stage('DAST - OWASP ZAP Baseline') {
-            when {
-                expression { return env.STAGING_URL?.trim() } // only runs if STAGING_URL is set
+        // ---------- Start app in Docker for DAST ----------
+        stage('Start Staging App (Docker)') {
+            steps {
+                sh '''#!/bin/bash
+set -euo pipefail
+
+# Create an isolated network for DAST if it doesn't exist
+docker network inspect dast_net >/dev/null 2>&1 || docker network create dast_net
+
+# Stop any previous container with the same name
+docker rm -f app-under-test >/dev/null 2>&1 || true
+
+# Run the app container on the network and publish the port for visibility
+docker run -d --name app-under-test --network dast_net -p "${APP_PORT}:${APP_PORT}" \
+  "${IMAGE_NAME}:${BUILD_NUMBER}"
+
+# Wait until the app responds via the container network (resolves by container name)
+echo "Waiting for app-under-test:${APP_PORT} to be ready..."
+for i in {1..30}; do
+  if docker run --rm --network dast_net curlimages/curl:8.10.1 -fsS \
+       "http://app-under-test:${APP_PORT}" >/dev/null; then
+    echo "✅ App is up."
+    exit 0
+  fi
+  echo "…still starting ($i/30)"
+  sleep 3
+done
+
+echo "❌ App did not become ready in time."
+docker logs --tail=200 app-under-test || true
+exit 1
+'''
             }
+        }
+
+        // ---------- DAST: OWASP ZAP Baseline (Docker → Docker) ----------
+        stage('DAST - OWASP ZAP Baseline (Docker)') {
             steps {
                 sh '''#!/bin/bash
 set -euo pipefail
 mkdir -p reports
 
-if command -v docker >/dev/null 2>&1; then
-  echo "Running ZAP Baseline against: $STAGING_URL"
-  docker run --rm -t \
-    -v "$PWD/reports:/zap/wrk" \
-    owasp/zap2docker-stable zap-baseline.py \
-      -t "$STAGING_URL" \
-      -J /zap/wrk/zap-baseline.json \
-      -w /zap/wrk/zap-warn.md \
-      -x /zap/wrk/zap-report.xml \
-      -r /zap/wrk/zap-report.html \
-      -I   # non-blocking; remove -I to make it fail on alerts
-else
-  echo "Docker not found → skipping ZAP DAST."
-fi
+TARGET="http://app-under-test:${APP_PORT}"
+echo "Running ZAP Baseline against: ${TARGET}"
+
+docker run --rm -t \
+  --network dast_net \
+  -v "$PWD/reports:/zap/wrk" \
+  owasp/zap2docker-stable zap-baseline.py \
+    -t "${TARGET}" \
+    -J /zap/wrk/zap-baseline.json \
+    -w /zap/wrk/zap-warn.md \
+    -x /zap/wrk/zap-report.xml \
+    -r /zap/wrk/zap-report.html \
+    -I   # non-blocking; remove -I later to FAIL the build on alerts
+'''
+            }
+        }
+
+        // ---------- Stop & cleanup ----------
+        stage('Stop Staging App (Docker)') {
+            steps {
+                sh '''#!/bin/bash
+set -euo pipefail
+docker rm -f app-under-test >/dev/null 2>&1 || true
+docker network rm dast_net >/dev/null 2>&1 || true
+echo "🧹 Cleaned up app and network."
 '''
             }
         }
