@@ -112,33 +112,17 @@ fi
             }
         }
 
-        // ---------- NEW: DAST (OWASP ZAP Baseline) ----------
-        stage('DAST - OWASP ZAP Baseline') {
-            when {
-                expression { return env.STAGING_URL?.trim() } // only runs if STAGING_URL is set
-            }
-            steps {
-                sh '''#!/bin/bash
-set -euo pipefail
-mkdir -p reports
 
-if command -v docker >/dev/null 2>&1; then
-  echo "Running ZAP Baseline against: $STAGING_URL"
-  docker run --rm -t \
-    -v "$PWD/reports:/zap/wrk" \
-    owasp/zap2docker-stable zap-baseline.py \
-      -t "$STAGING_URL" \
-      -J /zap/wrk/zap-baseline.json \
-      -w /zap/wrk/zap-warn.md \
-      -x /zap/wrk/zap-report.xml \
-      -r /zap/wrk/zap-report.html \
-      -I   # non-blocking; remove -I to make it fail on alerts
-else
-  echo "Docker not found → skipping ZAP DAST."
-fi
-'''
-            }
-        }
+      stage('DAST Scan') {
+    steps {
+        echo "🔍 Running DAST scan with Nikto..."
+        sh '''
+            nikto -h http://staging.monsite.com:8080 -output nikto-report.html
+        '''
+        archiveArtifacts artifacts: 'nikto-report.html', allowEmptyArchive: true
+    }
+}
+
     }
 
     post {
@@ -156,3 +140,4 @@ fi
         }
     }
 }
+
