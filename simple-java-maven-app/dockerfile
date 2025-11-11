@@ -1,28 +1,13 @@
-# ===== Build stage =====
-# Uses Maven 3.6.3 with Temurin (Java 17)
-FROM maven:3.6.3-eclipse-temurin-17 AS builder
-
+# Multi-stage build (if you must build inside Docker)
+FROM maven:3.8.7-eclipse-temurin-17 AS builder   # <- valid tag
 WORKDIR /app
-
-# Cache deps
 COPY pom.xml .
 RUN mvn -B -q -DskipTests dependency:go-offline
-
-# Build
 COPY src ./src
 RUN mvn -B -q -DskipTests clean package
 
-# ===== Runtime stage =====
-# Use Temurin JRE 17 (small, maintained)
 FROM eclipse-temurin:17-jre
-
 WORKDIR /app
 COPY --from=builder /app/target/*.jar /app/app.jar
-
-# Expose app port (change if different)
-EXPOSE 9001
-
-# Optional JVM tuning for containers
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
-
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"]
+EXPOSE 8080
+ENTRYPOINT ["sh","-c","java -jar /app/app.jar"]
