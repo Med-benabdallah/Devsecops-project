@@ -114,7 +114,9 @@ fi
 
         // ---------- NEW: DAST (OWASP ZAP Baseline) ----------
         stage('DAST - OWASP ZAP Baseline') {
-           
+            when {
+                expression { return env.STAGING_URL?.trim() } // only runs if STAGING_URL is set
+            }
             steps {
                 sh '''#!/bin/bash
 set -euo pipefail
@@ -154,4 +156,3 @@ fi
         }
     }
 }
-
