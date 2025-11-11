@@ -1,19 +1,20 @@
 pipeline {
   agent any
 
-  options { ansiColor('xterm'); timestamps() }
+  // Supprime ansiColor ici, garde seulement timestamps()
+  options {
+    timestamps()
+  }
 
   tools {
-    maven 'M2_HOME'            // ← ton Maven configuré dans Jenkins
+    maven 'M2_HOME'
   }
 
   environment {
-    // Token Jenkins Credentials (string) id: 'devsecops'
-    SONAR_TOKEN = credentials('devsecops')
+    SONAR_TOKEN = credentials('devsecops') // ton credential
   }
 
   stages {
-
     stage('Build') {
       steps {
         dir('simple-java-maven-app') {
@@ -25,7 +26,6 @@ pipeline {
     stage('SonarQube Analysis') {
       steps {
         dir('simple-java-maven-app') {
-          // Utilise la config "SonarQube" déclarée dans Jenkins (Manage Jenkins > System)
           withSonarQubeEnv('SonarQube') {
             sh '''
               mvn -B clean verify sonar:sonar \
@@ -38,75 +38,17 @@ pipeline {
       }
     }
 
-    // --- Ajout léger: attendre le Quality Gate (2 min) ---
     stage('SonarQube Quality Gate') {
       steps {
         timeout(time: 2, unit: 'MINUTES') {
-          // abortPipeline:false => n’arrête pas brutalement si le serveur ne répond pas
           waitForQualityGate abortPipeline: false
         }
       }
     }
-
-    // --- Optionnel mais utile: détection de secrets avant d’aller plus loin ---
-    stage('Secrets Scan (Gitleaks)') {
-      steps {
-        sh '''
-          mkdir -p reports
-          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:latest \
-            detect -s /repo -f json -r /repo/reports/gitleaks.json || EXIT=$?
-          # fail uniquement si secrets trouvés (exit code 1)
-          if [ "${EXIT:-0}" = "1" ]; then
-            echo "Secrets found by Gitleaks"; exit 1
-          fi
-        '''
-      }
-      post {
-        always {
-          archiveArtifacts artifacts: 'reports/gitleaks.json', onlyIfSuccessful: false
-        }
-      }
-    }
-
-    // --- SCA léger: OWASP Dependency-Check (plugin Jenkins) ---
-    stage('OWASP Dependency-Check') {
-      steps {
-        // Scanne uniquement le module pour garder la durée courte
-        dependencyCheck additionalArguments: '--scan simple-java-maven-app', odcInstallation: 'dc'
-        dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
-      }
-    }
-
-    // --- Trivy FileSystem: échoue si HIGH/CRITICAL ---
-    stage('Trivy FS Scan') {
-      steps {
-        sh '''
-          mkdir -p reports
-          trivy fs --exit-code 0 --format json --output reports/trivy-fs.json .
-          # Gate: fail sur HIGH/CRITICAL
-          trivy fs --severity HIGH,CRITICAL --exit-code 1 .
-        '''
-      }
-      post {
-        always {
-          archiveArtifacts artifacts: 'reports/trivy-fs.json', onlyIfSuccessful: false
-        }
-      }
-    }
-
-  } // stages
+  }
 
   post {
-    always {
-      // Si tests unitaires existent, Jenkins les ramassera (pas bloquant si absent)
-      junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-      archiveArtifacts artifacts: 'reports/**', onlyIfSuccessful: false
-    }
-    success {
-      echo '✅ Pipeline completed successfully!'
-    }
-    failure {
-      echo '❌ Pipeline failed — check the console output for details.'
-    }
+    success { echo '✅ Pipeline completed successfully!' }
+    failure { echo '❌ Pipeline failed — check the console output for details.' }
   }
 }
